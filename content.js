@@ -1,31 +1,50 @@
 (function() {
-  const scriptContent = `
-  (function() {
-      const originalSetAttribute = Element.prototype.setAttribute;
+  const TITLE_EL = document.querySelector('title') || (() => {
+      const t = document.createElement('title');
+      document.head.appendChild(t);
+      return t;
+  })();
 
-      // Block changes through setAttribute
-      Element.prototype.setAttribute = function(name, value) {
-          if (name === 'href' && (this.rel === 'icon' || this.rel === 'shortcut icon')) {
-              console.log('Blocked favicon change attempt');
-              return;
-          }
-          if (name === 'title' && this === document.querySelector('title')) {
-              console.log('Blocked title change attempt');
-              return;
-          }
-          return originalSetAttribute.call(this, name, value);
-      };
+  const blockFaviconChange = link => {
+    if (!link) return false;
+    const rel = (link.getAttribute('rel') || '').toLowerCase();
+    return rel === 'icon' || rel === 'shortcut icon';
+  };
 
-      // Override document.title to block title changes
-      Object.defineProperty(document, 'title', {
-          get() {
-              return document.querySelector('title').textContent;
-          },
-          set(newTitle) {
-          }
-      });
-  })();`;
-  const script = document.createElement('script');
-  script.textContent = scriptContent;
-  document.head.appendChild(script);
+  const originalSetAttribute = Element.prototype.setAttribute;
+  Element.prototype.setAttribute = function(name, value) {
+    if (name === 'href' && blockFaviconChange(this)) {
+      console.warn('Blocked favicon change attempt:', this, value);
+      return;
+    }
+    if (this === TITLE_EL && name === 'textContent') {
+      console.warn('Blocked title change via setAttribute');
+      return;
+    }
+    return originalSetAttribute.call(this, name, value);
+  };
+
+  Object.defineProperty(HTMLLinkElement.prototype, 'rel', {
+    set(newRel) {
+      if (blockFaviconChange(this)) {
+        console.warn('Blocked favicon rel change attempt:', newRel);
+        return;
+      }
+      this.setAttribute('rel', newRel);
+    },
+    get() {
+      return this.getAttribute('rel');
+    }
+  });
+
+  Object.defineProperty(document, 'title', {
+    configurable: false,
+    enumerable: true,
+    get() {
+      return TITLE_EL.textContent;
+    },
+    set(newTitle) {
+      console.warn('Blocked document.title change:', newTitle);
+    }
+  });
 })();
